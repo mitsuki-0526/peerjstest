@@ -422,6 +422,7 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.database();
+        db.goOffline(); // 最初はオフラインにする（接続枠節約）
         let roomId = null;
         let myName = "";
         let myScore = 0;
@@ -460,6 +461,8 @@
         let timerTimeout;
 
         function joinRoom() {
+            db.goOnline(); // 通信開始
+
             roomId = document.getElementById('room-id').value.trim();
             myName = document.getElementById('student-name').value.trim();
 
@@ -482,6 +485,7 @@
                     document.getElementById('join-msg').innerText = "部屋が見つかりません。PINを確認して！";
                     btn.disabled = false;
                     btn.innerText = "参加する";
+                    db.goOffline(); // 失敗したらオフラインに戻す
                     return;
                 }
 
@@ -519,6 +523,7 @@
                 document.getElementById('join-msg').innerText = "エラー: " + e.message;
                 btn.disabled = false;
                 btn.innerText = "参加する";
+                db.goOffline(); // エラー時はオフラインに戻す
             });
         }
 
@@ -572,6 +577,7 @@
                 } else if (data.type === "END" || data.type === "NEXT") {
                     if (data.type === "END") {
                         showOverlay("fb-wait", "🏆", "ゲーム終了！\n画面を見てね", "");
+                        db.goOffline(); // ゲーム終了時に接続を切る
                     } else {
                         document.getElementById('feedback-overlay').classList.add('hidden');
                         document.getElementById('view-game').classList.add('hidden');

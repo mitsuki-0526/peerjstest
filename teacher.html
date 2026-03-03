@@ -1383,6 +1383,7 @@
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.database();
+        db.goOffline(); // デフォルトでオフラインにする（接続枠節約）
 
         // ==========================================
         // 3. ゲームホスト・進行処理 (Firebase 6桁PIN化)
@@ -1397,6 +1398,7 @@
 
         function forceResetAllConnections() {
             if (confirm("【警告】現在接続中の全ての端末を強制的に切断し、全データを初期化しますか？\n(他クラスで使用中の場合、そのゲームも中断されます)")) {
+                db.goOnline(); // 通信を一時的に再開
                 db.ref('system/force_reset').set(Date.now()).then(() => {
                     db.ref('rooms').remove();
                     alert("リセット信号を送信しました。全ての端末が数秒以内に切断されます。");
@@ -1412,6 +1414,8 @@
         }
 
         function hostQuiz() {
+            db.goOnline(); // 通信開始
+
             if (!currentEditingQuizId) {
                 return alert("出題する前に、まず「読込」ボタンを押してデータを開いてください。");
             }
@@ -1537,7 +1541,10 @@
                 // Room cleanup
                 roomRef.remove().then(() => {
                     roomRef = null;
+                    db.goOffline(); // 接続を終了
                 });
+            } else {
+                db.goOffline(); // roomRefがない場合もオフラインにする
             }
         }
 
