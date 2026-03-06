@@ -1541,10 +1541,7 @@
                 // Room cleanup
                 roomRef.remove().then(() => {
                     roomRef = null;
-                    db.goOffline(); // 接続を終了
                 });
-            } else {
-                db.goOffline(); // roomRefがない場合もオフラインにする
             }
         }
 
