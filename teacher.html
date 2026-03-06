@@ -1389,6 +1389,12 @@
         // ==========================================
         // 3. ゲームホスト・進行処理 (Firebase 6桁PIN化)
         // ==========================================
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
         const players = {};
         let activeQuiz = null;
         let currentQIndex = -1;
@@ -1485,8 +1491,16 @@
                         players[studentId] = { studentId: studentId, name: data.name, score: 0, streak: 0, hasAnsweredThisRound: false };
                         const tag = document.createElement('div');
                         tag.className = 'player-tag';
-                        tag.innerHTML = `<span>${data.name}</span><button class="kick-btn" onclick="kickPlayer('${studentId}')" title="接続を切る">×</button>`;
                         tag.id = "ptag-" + studentId;
+                        const nameSpan = document.createElement('span');
+                        nameSpan.textContent = data.name;
+                        const kickBtn = document.createElement('button');
+                        kickBtn.className = 'kick-btn';
+                        kickBtn.title = '接続を切る';
+                        kickBtn.textContent = '×';
+                        kickBtn.addEventListener('click', () => kickPlayer(studentId));
+                        tag.appendChild(nameSpan);
+                        tag.appendChild(kickBtn);
                         document.getElementById('player-grid').appendChild(tag);
                         document.getElementById('player-count').innerText = Object.keys(players).length;
                         document.getElementById('btn-start').disabled = false;
@@ -1535,17 +1549,29 @@
         }
 
         function backToDashboard() {
-            ['view-lobby', 'view-question', 'view-interim', 'view-result'].forEach(id => {
+            ['view-lobby', 'view-question', 'view-reveal', 'view-interim', 'view-result'].forEach(id => {
                 document.getElementById(id).classList.add('hidden');
             });
             document.getElementById('view-editor').classList.remove('hidden');
             clearInterval(timerInterval);
 
             if (roomRef) {
-                broadcast({ type: "END" });
-                // Room cleanup
-                roomRef.remove().then(() => {
-                    roomRef = null;
+                // ENDブロードキャストを送信し、生徒に届くまで待ってからルームを削除
+                roomRef.child('broadcast').set({
+                    type: "END",
+                    _timestamp: firebase.database.ServerValue.TIMESTAMP
+                }).then(() => {
+                    setTimeout(() => {
+                        if (roomRef) {
+                            roomRef.remove().then(() => {
+                                roomRef = null;
+                            });
+                        }
+                    }, 1500);
+                }).catch(() => {
+                    if (roomRef) {
+                        roomRef.remove().then(() => { roomRef = null; });
+                    }
                 });
             }
         }
@@ -1561,6 +1587,8 @@
 
         function startGame() {
             document.getElementById('view-lobby').classList.add('hidden');
+            // 途中参加を禁止するためstateをACTIVEに更新
+            if (roomRef) roomRef.child('state').set('ACTIVE');
             currentQIndex = -1; nextQuestion();
         }
 
@@ -1619,18 +1647,20 @@
             if (roomRef) roomRef.child('answers').remove();
             if (roomRef) roomRef.child('results').remove();
 
-            broadcast({
+            // nullの多言語フィールドを除外してペイロードを軽量化
+            const broadcastData = {
                 type: "PRE_QUESTION",
                 qNum: currentQIndex + 1,
                 time: q.time,
                 qText: q.text,
-                qText_en: q.text_en,
-                qText_zh: q.text_zh,
                 qOptions: q.options,
-                qOptions_en: q.options_en,
-                qOptions_zh: q.options_zh,
                 preTime: preTime
-            });
+            };
+            if (q.text_en) { broadcastData.qText_en = q.text_en; }
+            if (q.text_zh) { broadcastData.qText_zh = q.text_zh; }
+            if (q.options_en) { broadcastData.qOptions_en = q.options_en; }
+            if (q.options_zh) { broadcastData.qOptions_zh = q.options_zh; }
+            broadcast(broadcastData);
 
             clearInterval(timerInterval);
             timerInterval = setInterval(() => {
@@ -1693,11 +1723,11 @@
 
             const sorted = Object.values(players).sort((a, b) => b.score - a.score);
 
-            const top5Data = sorted.slice(0, 5).map(p => ({ name: p.name, score: p.score, streak: p.streak }));
+            const top5Data = sorted.slice(0, 5).map(p => ({ name: p.name, score: p.score, streak: p.streak, studentId: p.studentId }));
             broadcast({ type: "RANKING", top5: top5Data });
 
             document.getElementById('interim-table').innerHTML = '<tr><th>順位</th><th>名前</th><th>スコア</th><th>連続<br>正解</th></tr>' +
-                sorted.slice(0, 5).map((p, i) => `<tr class="ranking-row" style="--i: ${i};"><td>${i + 1}</td><td>${p.name}</td><td>${p.score}</td><td>${p.streak >= 2 ? `🔥x${p.streak}` : '-'}</td></tr>`).join('');
+                sorted.slice(0, 5).map((p, i) => `<tr class="ranking-row" style="--i: ${i};"><td>${i + 1}</td><td>${escapeHtml(p.name)}</td><td>${p.score}</td><td>${p.streak >= 2 ? `🔥x${p.streak}` : '-'}</td></tr>`).join('');
         }
 
         function showFinalResult() {
@@ -1708,7 +1738,7 @@
 
             const sorted = Object.values(players).sort((a, b) => b.score - a.score);
 
-            const finalData = sorted.map((p, idx) => ({ rank: idx + 1, name: p.name, score: p.score }));
+            const finalData = sorted.map((p, idx) => ({ rank: idx + 1, name: p.name, score: p.score, studentId: p.studentId }));
             broadcast({ type: "FINAL_RANKING", results: finalData });
 
             [1, 2, 3].forEach(i => {
@@ -1722,7 +1752,7 @@
             if (sorted[2]) { document.getElementById('name-3').innerText = sorted[2].name; document.getElementById('score-3').innerText = sorted[2].score; setTimeout(() => document.getElementById('bar-3').style.height = "120px", 1100); }
 
             if (sorted.length > 3) {
-                let tableHtml = ''; for (let i = 3; i < sorted.length; i++) tableHtml += `<tr><td>${i + 1}位</td><td>${sorted[i].name}</td><td>${sorted[i].score}</td></tr>`;
+                let tableHtml = ''; for (let i = 3; i < sorted.length; i++) tableHtml += `<tr><td>${i + 1}位</td><td>${escapeHtml(sorted[i].name)}</td><td>${sorted[i].score}</td></tr>`;
                 document.getElementById('final-table').innerHTML = tableHtml;
             }
         }

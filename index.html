@@ -432,6 +432,12 @@
         let currentLang = "ja";
         let roomRef = null;
 
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(str));
+            return div.innerHTML;
+        }
+
         const pageLoadTime = Date.now();
         // 【修正】管理者による全端末強制切断の監視（過去の信号で誤発火しないようにする）
         db.ref('system/force_reset').on('value', (snap) => {
@@ -492,6 +498,15 @@
                     return;
                 }
 
+                // ゲーム開始後の途中参加をブロック
+                if (snapshot.val() === 'ACTIVE') {
+                    document.getElementById('join-msg').innerText = "ゲームはすでに始まっています。次のゲームを待ってね！";
+                    btn.disabled = false;
+                    btn.innerText = "参加する";
+                    db.goOffline();
+                    return;
+                }
+
                 roomRef.child('students/' + studentId).set({ name: myName, timestamp: firebase.database.ServerValue.TIMESTAMP });
                 roomRef.child('students/' + studentId).onDisconnect().remove();
 
@@ -544,14 +559,14 @@
 
                     let tableHtml = '<tr><th style="border-bottom:2px solid #ccc; padding:5px;">Rank</th><th style="border-bottom:2px solid #ccc; padding:5px;">Name</th><th style="border-bottom:2px solid #ccc; padding:5px;">Score</th></tr>';
                     (data.top5 || []).forEach((p, index) => {
-                        let isMe = (p.name === myName);
+                        let isMe = p.studentId ? (p.studentId === studentId) : (p.name === myName);
                         let style = isMe ? 'background-color:#ffffcc; font-weight:bold;' : '';
                         style += ` --i: ${index};`;
                         let icon = '';
                         if (index === 0) icon = '🥇 ';
                         else if (index === 1) icon = '🥈 ';
                         else if (index === 2) icon = '🥉 ';
-                        tableHtml += `<tr class="ranking-row" style="${style}"><td style="padding:8px 5px; text-align:center;">${icon}${index + 1}</td><td style="padding:8px 5px;">${p.name}</td><td style="padding:8px 5px; text-align:right;">${p.score}</td></tr>`;
+                        tableHtml += `<tr class="ranking-row" style="${style}"><td style="padding:8px 5px; text-align:center;">${icon}${index + 1}</td><td style="padding:8px 5px;">${escapeHtml(p.name)}</td><td style="padding:8px 5px; text-align:right;">${p.score}</td></tr>`;
                     });
                     document.getElementById('student-ranking-table').innerHTML = tableHtml;
                 } else if (data.type === "FINAL_RANKING") {
@@ -564,22 +579,26 @@
                     const results = data.results || [];
                     const top3 = results.slice(0, 3);
                     let podiumHtml = '';
-                    if (top3[1]) podiumHtml += `<div class="podium-item place-2"><div class="podium-name">${top3[1].name}</div><div class="podium-bar" style="height:120px;"><div class="podium-score">${top3[1].score}</div></div></div>`;
-                    if (top3[0]) podiumHtml += `<div class="podium-item place-1"><div class="podium-name">${top3[0].name}</div><div class="podium-bar" style="height:160px;"><div class="podium-score">${top3[0].score}</div></div></div>`;
-                    if (top3[2]) podiumHtml += `<div class="podium-item place-3"><div class="podium-name">${top3[2].name}</div><div class="podium-bar" style="height:80px;"><div class="podium-score">${top3[2].score}</div></div></div>`;
+                    if (top3[1]) podiumHtml += `<div class="podium-item place-2"><div class="podium-name">${escapeHtml(top3[1].name)}</div><div class="podium-bar" style="height:120px;"><div class="podium-score">${top3[1].score}</div></div></div>`;
+                    if (top3[0]) podiumHtml += `<div class="podium-item place-1"><div class="podium-name">${escapeHtml(top3[0].name)}</div><div class="podium-bar" style="height:160px;"><div class="podium-score">${top3[0].score}</div></div></div>`;
+                    if (top3[2]) podiumHtml += `<div class="podium-item place-3"><div class="podium-name">${escapeHtml(top3[2].name)}</div><div class="podium-bar" style="height:80px;"><div class="podium-score">${top3[2].score}</div></div></div>`;
 
                     document.getElementById('student-podium').innerHTML = podiumHtml;
 
-                    const myResult = results.find(p => p.name === myName);
+                    const myResult = results.find(p => p.studentId ? (p.studentId === studentId) : (p.name === myName));
                     if (myResult) {
                         if (currentLang === 'ja') document.getElementById('final-my-rank').innerText = `あなたの順位: ${myResult.rank}位`;
                         else if (currentLang === 'zh') document.getElementById('final-my-rank').innerText = `你的排名: 第${myResult.rank}名`;
                         else document.getElementById('final-my-rank').innerText = `Your Rank: ${myResult.rank}`;
                         document.getElementById('final-my-score').innerText = `${myResult.score} pts`;
                     }
+                    // ゲーム終了後、接続枠を解放する（結果表示後に遅延切断）
+                    setTimeout(() => { firebase.database().goOffline(); }, 5000);
                 } else if (data.type === "END" || data.type === "NEXT") {
                     if (data.type === "END") {
                         showOverlay("fb-wait", "🏆", "ゲーム終了！\n画面を見てね", "");
+                        // ゲーム終了後、接続枠を解放する
+                        setTimeout(() => { firebase.database().goOffline(); }, 3000);
                     } else {
                         document.getElementById('feedback-overlay').classList.add('hidden');
                         document.getElementById('view-game').classList.add('hidden');
@@ -598,6 +617,7 @@
             currentQTime = data.time;
             document.getElementById('view-waiting').classList.add('hidden');
             document.getElementById('view-ranking').classList.add('hidden');
+            document.getElementById('view-final').classList.add('hidden');
             document.getElementById('view-game').classList.remove('hidden');
             document.getElementById('q-counter').innerText = data.qNum;
 
@@ -693,7 +713,6 @@
                 roomRef.child('answers/' + studentId).set({
                     choice: choiceIndex,
                     timeTaken: timeTaken,
-                    myName: myName,
                     timestamp: firebase.database.ServerValue.TIMESTAMP
                 });
             }
