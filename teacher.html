@@ -458,7 +458,8 @@
             padding: 30px;
             border-radius: 8px;
             font-size: 1.8em;
-            font-weight: bold;
+            font-weight: 900;
+            text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.7);
             display: flex;
             align-items: center;
             text-align: left;
@@ -805,7 +806,7 @@
     <div id="view-reveal" class="container hidden">
         <h2>正解は...</h2>
         <div id="reveal-correct-box"
-            style="margin: 30px auto; padding: 30px; border-radius: 12px; color: white; font-size: 2em; font-weight: bold; max-width: 600px; box-shadow: 0 5px 15px rgba(0,0,0,0.2);">
+            style="margin: 30px auto; padding: 30px; border-radius: 12px; color: white; font-size: 2em; font-weight: 900; max-width: 600px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.7);">
             <!-- 正解の選択肢がここに入る -->
         </div>
         <button class="btn-main btn-next" onclick="showInterimRanking()" style="margin-top:20px;">ランキングを表示 ＞</button>
@@ -1409,7 +1410,11 @@
         function kickPlayer(sid) {
             if (!roomRef) return;
             if (confirm("この参加者の接続を切断しますか？")) {
-                roomRef.child('students').child(sid).remove();
+                // 生徒側の追放専用リスナーを発火させる
+                roomRef.child('kicks').child(sid).set(Date.now()).then(() => {
+                    // その後、参加者リストから削除する
+                    roomRef.child('students').child(sid).remove();
+                });
             }
         }
 

@@ -137,6 +137,8 @@
             align-items: center;
             justify-content: center;
             font-size: 3em;
+            font-weight: 900;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
             box-shadow: 0 8px 0 rgba(0, 0, 0, 0.2);
             transition: transform 0.1s, box-shadow 0.1s;
             cursor: pointer;
@@ -430,11 +432,12 @@
         let currentLang = "ja";
         let roomRef = null;
 
-        // 【追加】管理者による全端末強制切断の監視
+        const pageLoadTime = Date.now();
+        // 【修正】管理者による全端末強制切断の監視（過去の信号で誤発火しないようにする）
         db.ref('system/force_reset').on('value', (snap) => {
             if (snap.exists()) {
-                // ページロードから5秒以上経過している場合のみ実行（ロード時の初期発火を避ける）
-                if (performance.now() > 5000) {
+                const resetTime = snap.val();
+                if (resetTime > pageLoadTime) {
                     firebase.database().goOffline();
                     location.reload();
                 }
@@ -492,12 +495,12 @@
                 roomRef.child('students/' + studentId).set({ name: myName, timestamp: firebase.database.ServerValue.TIMESTAMP });
                 roomRef.child('students/' + studentId).onDisconnect().remove();
 
-                // 追放（キック）された時の処理
-                roomRef.child('students/' + studentId).on('value', (snap) => {
-                    if (!snap.exists() && roomRef) {
+                // 【修正】追放（キック）専用の信号を監視する
+                roomRef.child('kicks/' + studentId).on('value', (snap) => {
+                    if (snap.exists()) {
                         alert("先生によって接続が切断されました。");
-                        firebase.database().goOffline(); // 接続制限対策：完全に通信を切る
-                        location.reload(); // ページをリロードして初期状態に戻す
+                        firebase.database().goOffline();
+                        location.reload(); // ページをリロードして初期状態に戻し、通信を切る
                     }
                 });
 
